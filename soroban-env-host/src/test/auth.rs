@@ -3718,3 +3718,62 @@ fn test_instance_storage_in_check_auth_with_reentrance() {
     do_call("pre_post", 1, true);
     assert_eq!(get_key_increase(), 3);
 }
+
+#[test]
+fn test_issue_1436_future_signature_expiration_with_zero_max_entry_ttl() {
+    let test = AuthTest::setup(0, 2);
+    // Emulate Env::from_ledger_snapshot_file where max_entry_ttl is not configured (0)
+    let seq = 705663;
+    test.host
+        .set_ledger_info(crate::LedgerInfo {
+            protocol_version: Host::current_test_protocol(),
+            sequence_number: seq,
+            max_entry_ttl: 0,
+            ..Default::default()
+        })
+        .unwrap();
+
+    let account_obj = test
+        .host
+        .register_test_contract_wasm(CONDITIONAL_ACCOUNT_TEST_CONTRACT);
+    let account = Address::try_from_val(&test.host, &account_obj).unwrap();
+
+    // Setting future signature expiration ledger seq + 1 (previously panicked with
+    // "signature expiration is too late" when max_entry_ttl was 0)
+    let signature_expiration_ledger = seq + 1;
+    let auth_entry = SorobanAuthorizationEntry {
+        credentials: SorobanCredentials::Address(SorobanAddressCredentials {
+            address: account.to_sc_address().unwrap(),
+            nonce: 111,
+            signature: ScVal::Void,
+            signature_expiration_ledger,
+        }),
+        root_invocation: SorobanAuthorizedInvocation {
+            function: SorobanAuthorizedFunction::ContractFn(InvokeContractArgs {
+                contract_address: test.contracts[1].to_sc_address().unwrap(),
+                function_name: "do_auth".try_into().unwrap(),
+                args: vec![
+                    ScVal::Address(account.to_sc_address().unwrap()),
+                    ScVal::U32(123),
+                ]
+                .try_into()
+                .unwrap(),
+            }),
+            sub_invocations: Default::default(),
+        },
+    };
+
+    test.host
+        .set_authorization_entries(vec![auth_entry])
+        .unwrap();
+    let res = test.host.call(
+        test.contracts[0].clone().into(),
+        Symbol::try_from_val(&test.host, &"conditional_auth").unwrap(),
+        test_vec![&test.host, &account, &test.contracts[1]].into(),
+    );
+    assert!(res.is_ok());
+    assert_eq!(
+        test.read_nonce_live_until(&account, 111),
+        Some(signature_expiration_ledger)
+    );
+}

@@ -564,7 +564,10 @@ impl Host {
         Ok(())
     }
 
-    pub fn set_ledger_info(&self, info: LedgerInfo) -> Result<(), HostError> {
+    pub fn set_ledger_info(&self, mut info: LedgerInfo) -> Result<(), HostError> {
+        if info.max_entry_ttl == 0 {
+            info.max_entry_ttl = LedgerInfo::DEFAULT_MAX_ENTRY_TTL;
+        }
         *self.try_borrow_ledger_mut()? = Some(info);
         self.check_ledger_protocol_supported()
     }
