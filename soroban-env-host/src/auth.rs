@@ -1789,25 +1789,69 @@ impl AuthorizationManager {
         &self,
         host: &Host,
     ) -> Vec<(ScAddress, xdr::SorobanAuthorizedInvocation)> {
-        host.as_budget()
-            .with_observable_shadow_mode(|| {
-                self.account_trackers
-                    .borrow()
-                    .iter()
-                    .filter(|t| t.borrow().verified)
-                    .map(|t| {
-                        (
-                            host.scaddress_from_address(t.borrow().address).unwrap(),
-                            t.borrow()
-                                .invocation_tracker
-                                .root_authorized_invocation
-                                .to_xdr(host, true)
-                                .unwrap(),
-                        )
+        let auths_res = host.as_budget().with_observable_shadow_mode(|| {
+            self.account_trackers
+                .borrow()
+                .iter()
+                .filter(|t| t.borrow().verified)
+                .map(|t| {
+                    (
+                        host.scaddress_from_address(t.borrow().address).unwrap(),
+                        t.borrow()
+                            .invocation_tracker
+                            .root_authorized_invocation
+                            .to_xdr(host, true)
+                            .unwrap(),
+                    )
+                })
+                .metered_collect(host)
+        });
+
+        match auths_res {
+            Ok(auths) => auths,
+            Err(_) => {
+                // If shadow budget was exhausted during test execution, scale shadow
+                // limits and retry once, falling back gracefully to unmetered extraction
+                // rather than panicking test execution with a misleading budget error.
+                let _ = host.as_budget().ensure_shadow_cpu_limit_factor(10);
+                let _ = host.as_budget().ensure_shadow_mem_limit_factor(10);
+                host.as_budget()
+                    .with_observable_shadow_mode(|| {
+                        self.account_trackers
+                            .borrow()
+                            .iter()
+                            .filter(|t| t.borrow().verified)
+                            .map(|t| {
+                                (
+                                    host.scaddress_from_address(t.borrow().address).unwrap(),
+                                    t.borrow()
+                                        .invocation_tracker
+                                        .root_authorized_invocation
+                                        .to_xdr(host, true)
+                                        .unwrap(),
+                                )
+                            })
+                            .metered_collect(host)
                     })
-                    .metered_collect(host)
-            })
-            .unwrap()
+                    .unwrap_or_else(|_| {
+                        self.account_trackers
+                            .borrow()
+                            .iter()
+                            .filter(|t| t.borrow().verified)
+                            .filter_map(|t| {
+                                let addr = host.scaddress_from_address(t.borrow().address).ok()?;
+                                let inv = t
+                                    .borrow()
+                                    .invocation_tracker
+                                    .root_authorized_invocation
+                                    .to_xdr(host, true)
+                                    .ok()?;
+                                Some((addr, inv))
+                            })
+                            .collect()
+                    })
+            }
+        }
     }
 }
 

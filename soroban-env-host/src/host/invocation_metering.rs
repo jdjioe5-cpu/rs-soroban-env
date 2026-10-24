@@ -176,6 +176,25 @@ pub struct InvocationResourceLimits {
     pub max_contract_code_entry_size_bytes: u32,
 }
 
+#[cfg(any(test, feature = "testutils"))]
+impl Default for InvocationResourceLimits {
+    fn default() -> Self {
+        Self {
+            instructions: 400_000_000,
+            mem_bytes: 40_000_000,
+            disk_read_entries: 100,
+            write_entries: 100,
+            ledger_entries: 200,
+            disk_read_bytes: 10_000_000,
+            write_bytes: 10_000_000,
+            contract_events_size_bytes: 1_000_000,
+            max_contract_data_key_size_bytes: 10_000,
+            max_contract_data_entry_size_bytes: 100_000,
+            max_contract_code_entry_size_bytes: 1_000_000,
+        }
+    }
+}
+
 impl From<SubInvocationResources> for InvocationResources {
     fn from(sub: SubInvocationResources) -> Self {
         Self {
@@ -923,6 +942,12 @@ impl Host {
                     limits.instructions.max(0) as u64,
                     limits.mem_bytes.max(0) as u64,
                 )?;
+                // Scale shadow limits for tests/testutils so that internal
+                // bookkeeping (diagnostics, invocation tracking, footprint snapshots)
+                // across repeated cross-contract calls does not prematurely exhaust
+                // the shadow budget and fail tests with misleading budget errors.
+                self.budget_ref().ensure_shadow_cpu_limit_factor(10)?;
+                self.budget_ref().ensure_shadow_mem_limit_factor(10)?;
             } else {
                 // Limits are disabled, so we should disable the budget limit
                 // checks as well (or else the invocations will still fail due

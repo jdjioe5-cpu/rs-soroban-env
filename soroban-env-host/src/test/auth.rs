@@ -3718,3 +3718,77 @@ fn test_instance_storage_in_check_auth_with_reentrance() {
     do_call("pre_post", 1, true);
     assert_eq!(get_key_increase(), 3);
 }
+
+#[test]
+fn test_issue_1754_shadow_budget_scaling_and_exhaustion_resilience() {
+    let test = AuthTest::setup(0, 2);
+    let account_obj = test
+        .host
+        .register_test_contract_wasm(CONDITIONAL_ACCOUNT_TEST_CONTRACT);
+    let account = Address::try_from_val(&test.host, &account_obj).unwrap();
+
+    let auth_entry = SorobanAuthorizationEntry {
+        credentials: SorobanCredentials::Address(SorobanAddressCredentials {
+            address: account.to_sc_address().unwrap(),
+            nonce: 100,
+            signature: ScVal::Void,
+            signature_expiration_ledger: 1000,
+        }),
+        root_invocation: SorobanAuthorizedInvocation {
+            function: SorobanAuthorizedFunction::ContractFn(InvokeContractArgs {
+                contract_address: test.contracts[1].to_sc_address().unwrap(),
+                function_name: "do_auth".try_into().unwrap(),
+                args: vec![
+                    ScVal::Address(account.to_sc_address().unwrap()),
+                    ScVal::U32(123),
+                ]
+                .try_into()
+                .unwrap(),
+            }),
+            sub_invocations: Default::default(),
+        },
+    };
+
+    test.host
+        .set_authorization_entries(vec![auth_entry])
+        .unwrap();
+    let res = test.host.call(
+        test.contracts[0].clone().into(),
+        Symbol::try_from_val(&test.host, &"conditional_auth").unwrap(),
+        test_vec![&test.host, &account, &test.contracts[1]].into(),
+    );
+    assert!(res.is_ok());
+
+    // 1. Verify that get_authenticated_authorizations succeeds under normal conditions
+    let auths = test.host.get_authenticated_authorizations().unwrap();
+    assert_eq!(auths.len(), 1);
+
+    // 2. Artificially exhaust the shadow budget to simulate call-heavy tests
+    test.host.set_shadow_budget_limits(1, 1).unwrap();
+    // In issue #1754, get_authenticated_authorizations panicked with
+    // `called Result::unwrap() on an Err value: HostError: Error(Budget, ExceededLimit)`.
+    // With the fix, it must not panic and must gracefully return the authenticated authorizations.
+    let auths_after_exhaustion = test.host.get_authenticated_authorizations().unwrap();
+    assert_eq!(auths_after_exhaustion.len(), 1);
+}
+
+#[test]
+fn test_issue_1754_invocation_resource_limits_scales_shadow_budget() {
+    let host = Host::test_host();
+    host.enable_invocation_metering();
+    let limits = crate::InvocationResourceLimits::default();
+    let expected_cpu = limits.instructions as u64;
+    let expected_mem = limits.mem_bytes as u64;
+    host.set_invocation_resource_limits(Some(limits)).unwrap();
+
+    // Verify real limits are strictly set to expected limits
+    let b = host.budget_ref();
+    assert_eq!(b.get_cpu_insns_remaining().unwrap(), expected_cpu);
+    assert_eq!(b.get_mem_bytes_remaining().unwrap(), expected_mem);
+
+    // Verify shadow limits are scaled (at least 10x) to accommodate test bookkeeping
+    let shadow_cpu_limit = b.get_shadow_cpu_limit().unwrap();
+    let shadow_mem_limit = b.get_shadow_mem_limit().unwrap();
+    assert!(shadow_cpu_limit >= expected_cpu * 10);
+    assert!(shadow_mem_limit >= expected_mem * 10);
+}

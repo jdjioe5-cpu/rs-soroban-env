@@ -125,6 +125,14 @@ impl Budget {
         let mem = &self.0.try_borrow_or_err()?.mem_bytes;
         Ok(mem.shadow_net_count > mem.shadow_limit)
     }
+
+    pub fn get_shadow_cpu_limit(&self) -> Result<u64, HostError> {
+        Ok(self.0.try_borrow_or_err()?.cpu_insns.shadow_limit)
+    }
+
+    pub fn get_shadow_mem_limit(&self) -> Result<u64, HostError> {
+        Ok(self.0.try_borrow_or_err()?.mem_bytes.shadow_limit)
+    }
 }
 
 #[cfg(any(test, feature = "testutils"))]
