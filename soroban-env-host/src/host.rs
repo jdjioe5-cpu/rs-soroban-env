@@ -2495,12 +2495,16 @@ impl VmCallerEnv for Host {
         let argvec = self.call_args_from_obj(args)?;
         // this is the recommended path of calling a contract, with `reentry`
         // always set `ContractReentryMode::Prohibited`
-        let res = self.call_n_internal(
-            &self.contract_id_from_address(contract_address)?,
-            func,
-            argvec.as_slice(),
-            CallParams::default_external_call(),
-        );
+        let res = self
+            .contract_id_from_address(contract_address)
+            .and_then(|contract_id| {
+                self.call_n_internal(
+                    &contract_id,
+                    func,
+                    argvec.as_slice(),
+                    CallParams::default_external_call(),
+                )
+            });
         if let Err(e) = &res {
             self.error(
                 e.error,
@@ -2533,12 +2537,16 @@ impl VmCallerEnv for Host {
         // TODO: A `reentry` flag will be passed from `try_call` into here.
         // For now, we are passing in `ContractReentryMode::Prohibited` to disable
         // reentry.
-        let res = self.call_n_internal(
-            &self.contract_id_from_address(contract_address)?,
-            func,
-            argvec.as_slice(),
-            CallParams::default_external_call(),
-        );
+        let res = self
+            .contract_id_from_address(contract_address)
+            .and_then(|contract_id| {
+                self.call_n_internal(
+                    &contract_id,
+                    func,
+                    argvec.as_slice(),
+                    CallParams::default_external_call(),
+                )
+            });
         match res {
             Ok(rv) => Ok(rv),
             Err(e) => {

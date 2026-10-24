@@ -491,3 +491,40 @@ fn guest_error() -> Result<(), HostError> {
     );
     Ok(())
 }
+
+#[test]
+fn invoke_account_address_as_contract() -> Result<(), HostError> {
+    use soroban_env_common::xdr::{AccountId, PublicKey, ScAddress};
+
+    let host = observe_host!(Host::test_host_with_recording_footprint());
+    host.enable_debug()?;
+    let account_id = AccountId(PublicKey::PublicKeyTypeEd25519([0; 32].into()));
+    let account_addr_obj = host.add_host_object(ScAddress::Account(account_id))?;
+
+    let sym = Symbol::try_from_val(&*host, &"test")?;
+    let args = host.vec_new_from_slice(&[])?;
+
+    // Direct host call should fail with Object(InvalidInput)
+    let call_err = host.call(account_addr_obj, sym, args).err().unwrap();
+    assert!(call_err.error.is_type(ScErrorType::Object));
+    assert!(call_err.error.is_code(ScErrorCode::InvalidInput));
+
+    // Direct host try_call should recover to Context(InvalidAction)
+    let try_call_res = host.try_call(account_addr_obj, sym, args)?;
+    let expected_err = Error::from_scerror(ScError::Context(ScErrorCode::InvalidAction));
+    assert_eq!(
+        (*host).compare(&expected_err.to_val(), &try_call_res)?,
+        Ordering::Equal
+    );
+
+    // Cross-contract try_invoke_contract from Wasm should recover gracefully without trapping
+    let invoke_contract_id_obj = host.register_test_contract_wasm(INVOKE_CONTRACT);
+    let res = host.call(
+        invoke_contract_id_obj,
+        Symbol::try_from_val(&*host, &"add_with_try")?,
+        test_vec![&*host, 4i32, 7i32, account_addr_obj].into(),
+    )?;
+    assert_eq!(i32::try_from_val(&*host, &res)?, 0);
+
+    Ok(())
+}
