@@ -132,9 +132,17 @@ pub(crate) fn simulate_extend_ttl_op_resources(
     current_ledger_seq: u32,
     extend_to: u32,
 ) -> Result<(SorobanResources, Vec<LedgerEntryRentChange>)> {
+    let max_allowed_extend_to = network_config.max_entry_ttl.saturating_sub(1);
+    ensure!(
+        extend_to <= max_allowed_extend_to,
+        "extend_to ({extend_to}) exceeds the maximum allowed extension ({max_allowed_extend_to}) based on max_entry_ttl ({})",
+        network_config.max_entry_ttl
+    );
+    let new_live_until_ledger = current_ledger_seq
+        .checked_add(extend_to)
+        .ok_or_else(|| anyhow!("new_live_until_ledger overflows"))?;
     let mut rent_changes = Vec::<LedgerEntryRentChange>::with_capacity(keys_to_extend.len());
     let mut extended_keys = Vec::<LedgerKey>::with_capacity(keys_to_extend.len());
-    let new_live_until_ledger = current_ledger_seq + extend_to;
     for key in keys_to_extend {
         let durability = get_key_durability(key).ok_or_else(|| anyhow!("Can't extend TTL for ledger entry with key `{:?}`. Only entries with TTL (contract data or code entries) can have it extended", key))?;
         let entry_with_live_until = snapshot.get(&Rc::new(key.clone()))?;
