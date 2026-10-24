@@ -75,7 +75,7 @@ impl Host {
                 ScErrorCode::ExistingValue,
                 "contract already exists",
                 &[self
-                    .add_host_object(self.scbytes_from_hash(&contract_id.0)?)?
+                    .add_host_object(ScAddress::Contract(contract_id))?
                     .into()],
             ));
         }

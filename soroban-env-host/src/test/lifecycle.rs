@@ -337,7 +337,53 @@ fn create_contract_using_parent_id_test() {
 
     assert_eq!(
         wasm_hash.as_slice(),
-        get_contract_wasm_ref(&host, child_id).as_slice()
+        get_contract_wasm_ref(&host, child_id.clone()).as_slice()
+    );
+
+    // Attempt to create the same child contract again.
+    // As reported in #1500, this returns Error(Storage, ExistingValue) and emits
+    // the contract's AddressObject (ScAddress::Contract) rather than raw bytes.
+    let err = host
+        .call(
+            parent_contract_address,
+            Symbol::try_from_small_str("create").unwrap(),
+            args,
+        )
+        .unwrap_err();
+    assert!(HostError::result_matches_err(
+        Err::<(), _>(err),
+        (ScErrorType::Storage, ScErrorCode::ExistingValue),
+    ));
+
+    // Verify diagnostic event contains the contract Address, not raw Bytes.
+    let mut found_existing_event = false;
+    host.with_events_mut(|events| {
+        for event in events.vec.iter() {
+            if let (crate::events::InternalEvent::Diagnostic(de), _) = event {
+                if de.args.len() >= 2 {
+                    if let crate::events::InternalDiagnosticArg::XdrVal(ScVal::String(s)) =
+                        &de.args[0]
+                    {
+                        if s.to_string() == "contract already exists" {
+                            if let crate::events::InternalDiagnosticArg::HostVal(val) = de.args[1] {
+                                let scval = host.from_host_val(val).unwrap();
+                                assert_eq!(
+                                    scval,
+                                    ScVal::Address(ScAddress::Contract(child_id.clone()))
+                                );
+                                found_existing_event = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    })
+    .unwrap();
+    assert!(
+        found_existing_event,
+        "diagnostic event for contract already exists was not found"
     );
 }
 
