@@ -519,3 +519,24 @@ fn test_small_ints() {
     assert!(is_small_i256(&I256::new(1_i128)));
     assert!(is_small_i256(&I256::new(12345_i128)));
 }
+
+#[test]
+fn test_256_bit_math_host_fn_docs_trap() {
+    let env_json = include_str!("../env.json");
+    assert!(!env_json.is_empty());
+
+    // Ensure that none of the 256-bit math functions in env.json claim to return ScError
+    assert!(!env_json.contains(r#"returning `ScError` if overflow occurred"#));
+    assert!(!env_json.contains(r#"returning `ScError` if `rhs == 0` or overflow occurred"#));
+    assert!(!env_json.contains(r#"returning `ScError` if `rhs` is larger than or equal to"#));
+
+    // Ensure the updated trap phrasing is present for u256 and i256
+    assert!(env_json.contains(r#"Computes `lhs + rhs`. Traps if overflow occurred."#));
+    assert!(env_json.contains(r#"Computes `lhs - rhs`. Traps if overflow occurred."#));
+    assert!(env_json.contains(r#"Computes `lhs * rhs`. Traps if overflow occurred."#));
+    assert!(env_json.contains(r#"Computes `lhs / rhs`. Traps if `rhs == 0` or overflow occurred."#));
+    assert!(env_json.contains(r#"Computes `lhs % rhs`. Traps if `rhs == 0` or overflow occurred."#));
+    assert!(env_json.contains(r#"Computes `lhs.exp(rhs)`. Traps if overflow occurred."#));
+    assert!(env_json.contains(r#"Computes `lhs << rhs`. Traps if `rhs` is larger than or equal to the number of bits in `lhs`."#));
+    assert!(env_json.contains(r#"Computes `lhs >> rhs`. Traps if `rhs` is larger than or equal to the number of bits in `lhs`."#));
+}
