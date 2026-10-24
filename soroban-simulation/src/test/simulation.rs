@@ -260,7 +260,7 @@ fn test_simulation_returns_insufficient_budget_error() {
     assert!(res.diagnostic_events.is_empty());
 
     assert_eq!(res.transaction_data, None);
-    expect!["111636"].assert_eq(&res.simulated_instructions.to_string());
+    expect!["111604"].assert_eq(&res.simulated_instructions.to_string());
     expect!["45066"].assert_eq(&res.simulated_memory.to_string());
     assert_eq!(res.modified_entries, vec![]);
 }
@@ -294,8 +294,8 @@ fn test_simulation_returns_logic_error() {
     assert!(!res.diagnostic_events.is_empty());
 
     assert_eq!(res.transaction_data, None);
-    expect!["151688"].assert_eq(&res.simulated_instructions.to_string());
-    expect!["75844"].assert_eq(&res.simulated_memory.to_string());
+    expect!["135560"].assert_eq(&res.simulated_instructions.to_string());
+    expect!["67780"].assert_eq(&res.simulated_memory.to_string());
     assert_eq!(res.modified_entries, vec![]);
 }
 
@@ -1594,4 +1594,62 @@ fn test_simulate_unsuccessful_sac_call_with_try_call() {
             resource_fee: res.transaction_data.as_ref().unwrap().resource_fee,
         })
     );
+}
+
+#[test]
+fn test_simulation_contract_invocation_budget_exceeded_no_auth_error() {
+    let contract = CreateContractData::new([1; 32], AUTH_TEST_CONTRACT);
+    let tree = AuthContractInvocationNode {
+        address: contract.contract_address.clone(),
+        children: vec![],
+    };
+    let source_account = get_account_id([123; 32]);
+    let host_fn = auth_contract_invocation(vec![ScAddress::Account(source_account.clone())], tree);
+    let ledger_info = default_ledger_info();
+    let mut network_config = default_network_config();
+    network_config.tx_max_instructions = 10_000;
+    let snapshot_source = Rc::new(
+        MockSnapshotSource::from_entries(vec![
+            (
+                contract.wasm_entry.clone(),
+                Some(ledger_info.sequence_number + 100),
+            ),
+            (
+                contract.contract_entry.clone(),
+                Some(ledger_info.sequence_number + 100),
+            ),
+        ])
+        .unwrap(),
+    );
+
+    let res = simulate_invoke_host_function_op(
+        snapshot_source,
+        &network_config,
+        &SimulationAdjustmentConfig::no_adjustments(),
+        &ledger_info,
+        host_fn,
+        RecordingInvocationAuthMode::recording(true, true),
+        &source_account,
+        [1; 32],
+        true,
+    )
+    .unwrap();
+
+    assert!(HostError::result_matches_err(
+        res.invoke_result,
+        (ScErrorType::Budget, ScErrorCode::ExceededLimit)
+    ));
+    assert_eq!(res.auth, vec![]);
+    assert!(res.contract_events.is_empty());
+    for event in &res.diagnostic_events {
+        let soroban_env_host::xdr::ContractEventBody::V0(body) = &event.event.body;
+        for topic in body.topics.as_slice() {
+            if let ScVal::Error(err) = topic {
+                assert!(
+                    !matches!(err, soroban_env_host::xdr::ScError::Auth(_)),
+                    "simulation emitted unexpected auth error on failed invocation"
+                );
+            }
+        }
+    }
 }

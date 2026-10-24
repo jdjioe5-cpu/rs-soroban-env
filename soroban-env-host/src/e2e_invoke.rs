@@ -798,7 +798,9 @@ pub fn invoke_host_function_in_recording_mode(
             .saturating_add(saturating_usize_to_u32(encoded_result_sc_val.len()));
     }
 
-    let mut output_auth = if let RecordingInvocationAuthMode::Enforcing(auth_entries) = auth_mode {
+    let mut output_auth = if invoke_result.is_err() {
+        vec![]
+    } else if let RecordingInvocationAuthMode::Enforcing(auth_entries) = auth_mode {
         auth_entries
     } else {
         let recorded_auth = host.get_recorded_auth_payloads()?;
@@ -821,15 +823,17 @@ pub fn invoke_host_function_in_recording_mode(
             .collect::<Result<Vec<SorobanAuthorizationEntry>, HostError>>()?
     };
 
-    let encoded_auth_entries = output_auth
-        .iter()
-        .map(|e| host.to_xdr_non_metered(e))
-        .collect::<Result<Vec<Vec<u8>>, HostError>>()?;
-    let decoded_auth_entries = host.build_auth_entries_from_xdr(encoded_auth_entries.iter())?;
-    if is_recording_auth {
-        host.set_authorization_entries(decoded_auth_entries)?;
-        for auth_entry in &mut output_auth {
-            clear_signature(auth_entry);
+    if invoke_result.is_ok() {
+        let encoded_auth_entries = output_auth
+            .iter()
+            .map(|e| host.to_xdr_non_metered(e))
+            .collect::<Result<Vec<Vec<u8>>, HostError>>()?;
+        let decoded_auth_entries = host.build_auth_entries_from_xdr(encoded_auth_entries.iter())?;
+        if is_recording_auth {
+            host.set_authorization_entries(decoded_auth_entries)?;
+            for auth_entry in &mut output_auth {
+                clear_signature(auth_entry);
+            }
         }
     }
 
