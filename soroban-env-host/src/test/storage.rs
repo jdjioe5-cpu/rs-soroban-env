@@ -485,6 +485,29 @@ fn muxed_address_storage_key_conversion() {
 }
 
 #[test]
+fn test_muxed_address_storage_key_conversion_with_diagnostics() {
+    let host = observe_host!(Host::test_host_with_recording_footprint());
+    host.set_diagnostic_level(crate::DiagnosticLevel::Debug)
+        .unwrap();
+    let muxed_address = MuxedScAddress(ScAddress::MuxedAccount(MuxedEd25519Account {
+        id: 42,
+        ed25519: Uint256([7; 32]),
+    }));
+    let muxed_address_val = host
+        .add_host_object(muxed_address.clone())
+        .unwrap()
+        .to_val();
+    // Conversion for use as a storage key should fail with Storage/InvalidInput error
+    // even when diagnostics are active, without recursion or budget exhaustion (issue #1753).
+    let res = host.from_host_val_for_storage(muxed_address_val);
+
+    assert!(HostError::result_matches_err(
+        res,
+        (ScErrorType::Storage, ScErrorCode::InvalidInput)
+    ));
+}
+
+#[test]
 fn test_cap_84_muxed_contract_storage_key_conversion() {
     use crate::xdr::MuxedContract;
     let host = observe_host!(Host::test_host_with_recording_footprint());
@@ -507,6 +530,28 @@ fn test_cap_84_muxed_contract_storage_key_conversion() {
     // Conversion to regular ScVal should succeed.
     let res_non_storage = host.from_host_val(muxed_address_val);
     assert!(res_non_storage.is_ok());
+}
+
+#[test]
+fn test_cap_84_muxed_contract_storage_key_conversion_with_diagnostics() {
+    use crate::xdr::MuxedContract;
+    let host = observe_host!(Host::test_host_with_recording_footprint());
+    host.set_diagnostic_level(crate::DiagnosticLevel::Debug)
+        .unwrap();
+    let muxed_address = MuxedScAddress(ScAddress::MuxedContract(MuxedContract {
+        id: 42,
+        contract_id: ContractId([7; 32].into()),
+    }));
+    let muxed_address_val = host
+        .add_host_object(muxed_address.clone())
+        .unwrap()
+        .to_val();
+    let res = host.from_host_val_for_storage(muxed_address_val);
+
+    assert!(HostError::result_matches_err(
+        res,
+        (ScErrorType::Storage, ScErrorCode::InvalidInput)
+    ));
 }
 
 // Drives an end-to-end contract call for every storage type to assert that

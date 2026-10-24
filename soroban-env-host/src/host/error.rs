@@ -282,6 +282,13 @@ impl ErrorHandler for Host {
     fn error(&self, error: Error, msg: &str, args: &[Val]) -> HostError {
         let mut he = HostError::from(error);
         self.with_debug_mode(|| {
+            let prev_storage_key_active = self
+                .try_borrow_storage_key_conversion_active()
+                .map(|b| *b)
+                .unwrap_or(false);
+            if let Ok(mut active) = self.try_borrow_storage_key_conversion_active_mut() {
+                *active = false;
+            }
             // We _try_ to take a mutable borrow of the events buffer refcell
             // while building up the event we're going to emit into the events
             // log, failing gracefully (just emitting a no-debug-info
@@ -296,6 +303,9 @@ impl ErrorHandler for Host {
                 error,
                 info: self.maybe_get_debug_info(),
             };
+            if let Ok(mut active) = self.try_borrow_storage_key_conversion_active_mut() {
+                *active = prev_storage_key_active;
+            }
             Ok(())
         });
         he
