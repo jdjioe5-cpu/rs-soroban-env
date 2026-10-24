@@ -13,12 +13,33 @@ pub struct Poseidon2Params<F: MeteredScalar> {
     pub(crate) rounds_f_beginning: usize,
     pub(crate) rounds_p: usize,
     pub(crate) rounds: usize,
+    /// Internal matrix diagonal minus 1 (`mu_i - 1`) for `t >= 4`.
+    ///
+    /// # Note on `t in {2, 3}`
+    /// In accordance with the Poseidon2 specification and reference implementation,
+    /// the internal matrix `M_I` for `t = 2` and `t = 3` is canonicalized and fixed
+    /// to specialized values for performance optimization:
+    /// - `t = 2`: `M_I = [[2, 1], [1, 3]]`
+    /// - `t = 3`: `M_I = [[2, 1, 1], [1, 2, 1], [1, 1, 3]]`
+    ///
+    /// As a result, when `t in {2, 3}`, caller-specified elements in `mat_internal_diag_m_1`
+    /// are ignored during the permutation, though its length is still validated to equal `t`.
     pub(crate) mat_internal_diag_m_1: Vec<F>,
     pub(crate) round_constants: Vec<Vec<F>>,
 }
 
 impl<F: MeteredScalar> Poseidon2Params<F> {
     /// Creates new Poseidon2Params with full validation using Host for error reporting.
+    ///
+    /// # Parameters
+    /// * `t` - Statesize (number of field elements).
+    /// * `d` - S-box degree (must be a supported degree, e.g. 5).
+    /// * `rounds_f` - Number of full rounds (must be even).
+    /// * `rounds_p` - Number of partial rounds.
+    /// * `mat_internal_diag_m_1` - Vector of length `t` containing diagonal entries minus 1.
+    ///   Note that for `t in {2, 3}`, canonical fixed internal matrices are used, so the
+    ///   values in this vector are ignored during the permutation (though length `t` is still required).
+    /// * `round_constants` - Round constants of dimension `(rounds_f + rounds_p) x t`.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         host: &Host,

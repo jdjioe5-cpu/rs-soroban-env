@@ -612,4 +612,34 @@ mod poseidon2_tests_bn254 {
             from_hex("0x1ed25194542b12eef8617361c3ba7c52e660b145994427cc86296242cf766ec8")
         );
     }
+
+    /// Verifies the documentation behavior specified in #1660:
+    /// For t in {2, 3}, Poseidon2 uses a canonicalized fixed internal matrix for
+    /// performance optimization, so varying the contents of `mat_internal_diag_m_1`
+    /// does not affect the permutation result.
+    #[test]
+    fn test_poseidon2_t3_ignores_mat_internal_diag_m_1() {
+        let host = Host::test_host();
+        let base_params = (**POSEIDON2_BN254_PARAMS).clone();
+        let input: Vec<Scalar> = (0..base_params.t).map(|i| Scalar::from(i as u64)).collect();
+
+        // Standard permutation with original mat_internal_diag_m_1
+        let p1 = Poseidon2::new(base_params.clone());
+        let res1 = p1.permutation(&host, &input).unwrap();
+
+        // Mutate mat_internal_diag_m_1 with all zeros
+        let mut mutated_params_zeros = base_params.clone();
+        mutated_params_zeros.mat_internal_diag_m_1 = vec![Scalar::from(0); base_params.t];
+        let p_zeros = Poseidon2::new(mutated_params_zeros);
+        let res_zeros = p_zeros.permutation(&host, &input).unwrap();
+
+        // Mutate mat_internal_diag_m_1 with arbitrary non-zero values
+        let mut mutated_params_arbitrary = base_params;
+        mutated_params_arbitrary.mat_internal_diag_m_1 = vec![Scalar::from(999); 3];
+        let p_arbitrary = Poseidon2::new(mutated_params_arbitrary);
+        let res_arbitrary = p_arbitrary.permutation(&host, &input).unwrap();
+
+        assert_eq!(res1, res_zeros);
+        assert_eq!(res1, res_arbitrary);
+    }
 }

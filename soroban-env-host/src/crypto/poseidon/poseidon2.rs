@@ -220,6 +220,35 @@ impl<F: MeteredScalar> Poseidon2<F> {
     /// The internal matrix is used during the partial S-box rounds
     /// where only the first state element goes through the S-box.
     ///
+    /// # Matrix Construction and `t = {2, 3}` Special Rules
+    ///
+    /// For statesizes `t >= 4`, Poseidon2 uses a diagonal-plus-all-ones internal matrix:
+    /// `M_I = diag(mat_internal_diag_m_1) + 1*1^T`, where each diagonal element
+    /// is specified by caller-provided `mat_internal_diag_m_1`.
+    ///
+    /// For statesizes `t in {2, 3}`, however, Poseidon2 defines canonical fixed
+    /// internal matrices `M_I` optimized for performance (avoiding general field
+    /// multiplications in favor of additions and a single doubling):
+    /// - For `t = 2`:
+    ///   ```text
+    ///   [2, 1]
+    ///   [1, 3]
+    ///   ```
+    ///   yielding `state[0]' = state[0] + sum`, `state[1]' = 2 * state[1] + sum`
+    ///   where `sum = state[0] + state[1]`.
+    /// - For `t = 3`:
+    ///   ```text
+    ///   [2, 1, 1]
+    ///   [1, 2, 1]
+    ///   [1, 1, 3]
+    ///   ```
+    ///   yielding `state[0]' = state[0] + sum`, `state[1]' = state[1] + sum`,
+    ///   `state[2]' = 2 * state[2] + sum` where `sum = state[0] + state[1] + state[2]`.
+    ///
+    /// Consequently, for `t in {2, 3}`, the values of `mat_internal_diag_m_1` are ignored
+    /// during permutation execution, although its length is still validated to equal `t`
+    /// for interface consistency.
+    ///
     /// Reference: Section 5.2 of the Poseidon2 paper
     /// (https://eprint.iacr.org/2023/323)
     fn matmul_internal(

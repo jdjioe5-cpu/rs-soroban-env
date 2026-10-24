@@ -3442,6 +3442,20 @@ impl VmCallerEnv for Host {
         }
     }
 
+    /// Performs the Poseidon2 permutation on an input vector.
+    ///
+    /// # Parameters
+    /// * `input` - Vector of field elements of length `t`.
+    /// * `field` - Supported field symbol: `'BLS12_381'` or `'BN254'`.
+    /// * `t` - Statesize (length of input vector).
+    /// * `d` - S-box degree (must be a supported degree, e.g. 5).
+    /// * `rounds_f` - Number of full rounds (must be even).
+    /// * `rounds_p` - Number of partial rounds.
+    /// * `mat_internal_diag_m_1` - Internal matrix diagonal minus 1 (`mu_i - 1`).
+    ///   Note that for `t in {2, 3}`, canonical fixed internal matrices `M_I` are used
+    ///   for performance optimization, so the caller-specified elements in this vector
+    ///   are ignored during execution (though its length must still equal `t`).
+    /// * `round_constants` - Round constants matrix of dimension `(rounds_f + rounds_p) x t`.
     fn poseidon2_permutation(
         &self,
         _vmcaller: &mut VmCaller<Host>,
