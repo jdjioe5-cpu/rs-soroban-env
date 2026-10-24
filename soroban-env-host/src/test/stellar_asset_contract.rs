@@ -757,6 +757,193 @@ fn test_transfer_with_issuer() {
 }
 
 #[test]
+fn test_sac_events_coverage() {
+    let test: StellarAssetContractTest = StellarAssetContractTest::setup(function_name!());
+    // Enable invocation metering to get the events to reset automatically on
+    // every contract call.
+    test.host.enable_invocation_metering();
+    let admin = TestSigner::account(&test.issuer_key);
+    let contract = test.default_stellar_asset_contract();
+
+    let user = TestSigner::account(&test.user_key);
+    let user_2 = TestSigner::account(&test.user_key_2);
+    let user_3 = TestSigner::account(&test.user_key_3);
+    let new_admin = TestSigner::account(&test.user_key_4);
+
+    test.create_default_account(&user);
+    test.create_default_account(&user_2);
+    test.create_default_account(&user_3);
+    test.create_default_account(&new_admin);
+    test.create_default_trustline(&user);
+    test.create_default_trustline(&user_2);
+    test.create_default_trustline(&user_3);
+    test.create_default_trustline(&new_admin);
+
+    let token_name = contract.name().unwrap();
+
+    // 1. mint event
+    contract
+        .mint(&admin, user.address(&test.host), 100_000_000)
+        .unwrap();
+    assert_eq!(
+        test.host.get_contract_events().unwrap().0,
+        vec![contract.test_event(
+            test_vec![
+                &test.host,
+                Symbol::try_from_small_str("mint").unwrap().to_val(),
+                user.address(&test.host),
+                &token_name,
+            ],
+            100_000_000_i128.try_into_val(&test.host).unwrap()
+        )]
+    );
+
+    // 2. approve event
+    contract
+        .approve(&user, user_2.address(&test.host), 50_000_000, 200)
+        .unwrap();
+    assert_eq!(
+        test.host.get_contract_events().unwrap().0,
+        vec![contract.test_event(
+            test_vec![
+                &test.host,
+                Symbol::try_from_small_str("approve").unwrap().to_val(),
+                user.address(&test.host),
+                user_2.address(&test.host),
+                &token_name,
+            ],
+            test_vec![&test.host, 50_000_000_i128, 200_u32].into()
+        )]
+    );
+
+    // 3. transfer_from event
+    contract
+        .transfer_from(
+            &user_2,
+            user.address(&test.host),
+            user_3.address(&test.host),
+            20_000_000,
+        )
+        .unwrap();
+    assert_eq!(
+        test.host.get_contract_events().unwrap().0,
+        vec![contract.test_event(
+            test_vec![
+                &test.host,
+                Symbol::try_from_small_str("transfer").unwrap().to_val(),
+                user.address(&test.host),
+                user_3.address(&test.host),
+                &token_name,
+            ],
+            20_000_000_i128.try_into_val(&test.host).unwrap()
+        )]
+    );
+
+    // 4. burn_from event
+    contract
+        .burn_from(&user_2, user.address(&test.host), 10_000_000)
+        .unwrap();
+    assert_eq!(
+        test.host.get_contract_events().unwrap().0,
+        vec![contract.test_event(
+            test_vec![
+                &test.host,
+                Symbol::try_from_small_str("burn").unwrap().to_val(),
+                user.address(&test.host),
+                &token_name,
+            ],
+            10_000_000_i128.try_into_val(&test.host).unwrap()
+        )]
+    );
+
+    // 5. burn event
+    contract.burn(&user, 5_000_000).unwrap();
+    assert_eq!(
+        test.host.get_contract_events().unwrap().0,
+        vec![contract.test_event(
+            test_vec![
+                &test.host,
+                Symbol::try_from_small_str("burn").unwrap().to_val(),
+                user.address(&test.host),
+                &token_name,
+            ],
+            5_000_000_i128.try_into_val(&test.host).unwrap()
+        )]
+    );
+
+    // 6. clawback event
+    contract
+        .clawback(&admin, user.address(&test.host), 15_000_000)
+        .unwrap();
+    assert_eq!(
+        test.host.get_contract_events().unwrap().0,
+        vec![contract.test_event(
+            test_vec![
+                &test.host,
+                Symbol::try_from_small_str("clawback").unwrap().to_val(),
+                user.address(&test.host),
+                &token_name,
+            ],
+            15_000_000_i128.try_into_val(&test.host).unwrap()
+        )]
+    );
+
+    // 7. set_authorized events (deauthorize & authorize)
+    contract
+        .set_authorized(&admin, user.address(&test.host), false)
+        .unwrap();
+    assert_eq!(
+        test.host.get_contract_events().unwrap().0,
+        vec![contract.test_event(
+            test_vec![
+                &test.host,
+                Symbol::try_from_val(&test.host, &"set_authorized")
+                    .unwrap()
+                    .to_val(),
+                user.address(&test.host),
+                &token_name,
+            ],
+            false.try_into_val(&test.host).unwrap()
+        )]
+    );
+
+    contract
+        .set_authorized(&admin, user.address(&test.host), true)
+        .unwrap();
+    assert_eq!(
+        test.host.get_contract_events().unwrap().0,
+        vec![contract.test_event(
+            test_vec![
+                &test.host,
+                Symbol::try_from_val(&test.host, &"set_authorized")
+                    .unwrap()
+                    .to_val(),
+                user.address(&test.host),
+                &token_name,
+            ],
+            true.try_into_val(&test.host).unwrap()
+        )]
+    );
+
+    // 8. set_admin event
+    contract
+        .set_admin(&admin, new_admin.address(&test.host))
+        .unwrap();
+    assert_eq!(
+        test.host.get_contract_events().unwrap().0,
+        vec![contract.test_event(
+            test_vec![
+                &test.host,
+                Symbol::try_from_small_str("set_admin").unwrap().to_val(),
+                admin.address(&test.host),
+                &token_name,
+            ],
+            new_admin.address(&test.host).as_object().into()
+        )]
+    );
+}
+
+#[test]
 fn test_cap_67_transfer_with_muxed_accounts() {
     let test = StellarAssetContractTest::setup(function_name!());
     // Enable invocation metering to get the events to reset automatically on
